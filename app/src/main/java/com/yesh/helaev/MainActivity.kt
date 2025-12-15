@@ -1,16 +1,17 @@
 package com.yesh.helaev
 
+import android.content.Intent
 import android.os.Bundle
 import android.widget.ArrayAdapter
 import android.widget.AutoCompleteTextView
 import android.widget.Button
 import android.widget.SeekBar
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
 
-    // 1. CHANGED: We use AutoCompleteTextView instead of Spinner
     private lateinit var autoCompleteVehicle: AutoCompleteTextView
     private lateinit var tvBatteryPercentage: TextView
     private lateinit var seekBarBattery: SeekBar
@@ -23,39 +24,43 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // 2. Connect the new ID
+        // Initialize Views
         autoCompleteVehicle = findViewById(R.id.autoCompleteVehicle)
         tvBatteryPercentage = findViewById(R.id.tvBatteryPercentage)
         seekBarBattery = findViewById(R.id.seekBarBattery)
         tvRangeResult = findViewById(R.id.tvRangeResult)
         btnDirectMe = findViewById(R.id.btnDirectMe)
 
-        setupVehicleSelector() // Updated function name
+        setupVehicleSelector()
         setupSeekBar()
 
         btnDirectMe.setOnClickListener {
-            // Navigation logic will go here later
+            val rangeText = tvRangeResult.text.toString().filter { it.isDigit() }
+
+            if (rangeText.isNotEmpty() && rangeText.toInt() > 0) {
+                val rangeValue = rangeText.toInt()
+                Toast.makeText(this, "Calculating route for $rangeValue km...", Toast.LENGTH_SHORT).show()
+
+                val intent = Intent(this, LoadingActivity::class.java)
+                intent.putExtra("RANGE_RESULT", rangeValue)
+                startActivity(intent)
+            } else {
+                Toast.makeText(this, "Please select a vehicle first!", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
     private fun setupVehicleSelector() {
         val vehicleNames = VehicleRepository.vehicleList.map { it.name }
-
-        // Create the adapter for filtering
         val adapter = ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, vehicleNames)
         autoCompleteVehicle.setAdapter(adapter)
 
-        // LOGIC: When the user clicks a suggestion from the list
         autoCompleteVehicle.setOnItemClickListener { _, _, position, _ ->
-            // The position here refers to the FILTERED list, not the original list.
-            // So we must get the text they clicked, then find the car by name.
             val selectedName = adapter.getItem(position).toString()
             selectedVehicle = VehicleRepository.getVehicleByName(selectedName)
-
             updateRangeCalculation()
         }
 
-        // OPTIONAL: Open the list as soon as they click the box (even before typing)
         autoCompleteVehicle.setOnClickListener {
             autoCompleteVehicle.showDropDown()
         }

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:background="#FFFFFF">
+
+    <TextView
+        android:id="@+id/tvStationName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Station Name"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="8dp"/>
+
+    <TextView
+        android:id="@+id/tvStationStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Status: Checking..."
+        android:textColor="#555555"
+        android:layout_marginBottom="16dp"/>
+
+    <Button
+        android:id="@+id/btnNavigate"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="📍 Navigate Here"
+        android:backgroundTint="#2196F3"
+        android:textColor="#FFFFFF"
+        android:layout_marginBottom="24dp"/>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Report Crowd Level:"
+        android:textSize="16sp"
+        android:layout_marginBottom="12dp"/>
+
+    <RadioGroup
+        android:id="@+id/rgBusyness"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="24dp">
+
+        <RadioButton
+            android:id="@+id/rbLow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🟢 Low Traffic (Free)" />
+
+        <RadioButton
+            android:id="@+id/rbMedium"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🟡 Medium Traffic (Wait &lt; 15m)" />
+
+        <RadioButton
+            android:id="@+id/rbHigh"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🔴 High Traffic (Busy)" />
+    </RadioGroup>
+
+    <Button
+        android:id="@+id/btnSubmitRating"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Submit Update"
+        android:backgroundTint="#009688"
+        android:textColor="#FFFFFF"/>
+
+</LinearLayout>

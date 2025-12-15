@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">HelaEV</string>
     <string name="title_activity_maps">MapsActivity</string>
-    <string name="google_maps_key">YOUR_API_KEY_HERE</string>
+    <string name="google_maps_key">AIzaSyAdG9_pJu0UYpYN0Oe8d2tXoa__I0L7dks</string>
 </resources>
