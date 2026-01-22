@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Dialog
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.widget.Button
@@ -19,6 +20,7 @@ import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
+import com.google.android.gms.maps.model.CircleOptions
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
@@ -40,6 +42,20 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
         val mapFragment = supportFragmentManager
             .findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
+
+        // Find the button
+        val btnBack = findViewById<Button>(R.id.btnBackHome)
+
+// Handle Click
+        btnBack.setOnClickListener {
+            // Option A: Just close this screen (Goes back to previous)
+            finish()
+
+            // Option B (Safer): Force restart Main Activity
+            // val intent = Intent(this, MainActivity::class.java)
+            // intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
+            // startActivity(intent)
+        }
     }
 
     override fun onMapReady(googleMap: GoogleMap) {
@@ -48,11 +64,12 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
 
         // 1. Load Stations
         val stations = StationRepository.stations
-
         var recommendedMarker: Marker? = null
 
+        // Define our "Home Base" for the demo (Panadura)
+        val homeLocation = LatLng(6.7106, 79.9074)
+
         for (station in stations) {
-            // Get the REAL status (Busy, Medium, or Free)
             val currentStatus = StationRepository.getStationStatus(this, station.id)
             val isPanadura = (station.title == "Panadura Public Charger")
 
@@ -61,43 +78,51 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
                 .title(station.title)
                 .snippet("Status: $currentStatus")
 
-            // --- FIXED COLOR LOGIC ---
+            // LOGIC: Set Pin Colors
             if (currentStatus == "Busy") {
-                // High Traffic -> RED
                 markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
-
             } else if (currentStatus == "Medium") {
-                // Medium Traffic -> ORANGE (New!)
                 markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE))
-
             } else if (isPanadura && userMode == "DRIVER") {
-                // Panadura + Free + Driver Mode -> GREEN (Best Choice)
                 markerOptions
                     .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN))
                     .snippet("★ Recommended (Free & In Range)")
                     .zIndex(1.0f)
             } else {
-                // Others + Free -> AZURE (Blue)
                 markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
             }
 
             val marker = mMap.addMarker(markerOptions)
             marker?.tag = station.id
 
-            // Save reference if it's the recommended one
             if (isPanadura && currentStatus == "Free" && userMode == "DRIVER") {
                 recommendedMarker = marker
             }
         }
 
-        // Auto-Zoom
-        val panaduraLoc = LatLng(6.7106, 79.9074)
-        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(panaduraLoc, 12f))
+        // 2. Auto-Zoom to Home
+        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(homeLocation, 10f)) // Zoomed out a bit to see the circle
+
+        // 3. DRAW RANGE CIRCLE (Visual Geofencing)
+        if (userMode == "DRIVER" && calculatedRange > 0) {
+            // Convert km to meters
+            val radiusInMeters = calculatedRange * 1000.0
+
+            mMap.addCircle(
+                CircleOptions()
+                    .center(homeLocation) // Center on Panadura (Our Simulation Start)
+                    .radius(radiusInMeters) // The Range from Screen 1
+                    .strokeWidth(3f)
+                    .strokeColor(Color.BLUE) // The outline color
+                    .fillColor(0x220000FF) // Semi-transparent Blue (The "0x22" makes it see-through)
+            )
+
+            Toast.makeText(this, "Blue Circle shows your $calculatedRange km range", Toast.LENGTH_LONG).show()
+        }
 
         // Show Recommendation
         if (recommendedMarker != null) {
             recommendedMarker.showInfoWindow()
-            Toast.makeText(this, "Best station found based on traffic & range!", Toast.LENGTH_LONG).show()
         }
 
         mMap.setOnMarkerClickListener { marker ->
@@ -129,24 +154,20 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
             dialog.dismiss()
         }
 
-        // --- FIXED SAVING LOGIC ---
         btnSubmit.setOnClickListener {
             val selectedId = rgBusyness.checkedRadioButtonId
             if (selectedId != -1) {
                 val selectedRb = dialog.findViewById<RadioButton>(selectedId)
                 val statusText = selectedRb.text.toString()
 
-                // 1. Determine Exact Status
                 val exactStatus = when {
                     statusText.contains("High") -> "Busy"
-                    statusText.contains("Medium") -> "Medium" // Now we capture Medium!
+                    statusText.contains("Medium") -> "Medium"
                     else -> "Free"
                 }
 
-                // 2. Save to Phone
                 StationRepository.saveStationStatus(this, stationId, exactStatus)
 
-                // 3. Update UI (Visuals) immediately
                 marker.snippet = "Status: $exactStatus"
 
                 when (exactStatus) {
