@@ -27,6 +27,7 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private lateinit var mMap: GoogleMap
     private var calculatedRange: Int = 0
+    private var userMode: String = "DRIVER"
     private val LOCATION_PERMISSION_REQUEST_CODE = 1
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -34,6 +35,7 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
         setContentView(R.layout.activity_maps)
 
         calculatedRange = intent.getIntExtra("RANGE_RESULT", 0)
+        userMode = intent.getStringExtra("USER_MODE") ?: "DRIVER"
 
         val mapFragment = supportFragmentManager
             .findFragmentById(R.id.map) as SupportMapFragment
@@ -44,80 +46,63 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
         mMap = googleMap
         enableMyLocation()
 
-        // 1. Define Stations
-        val stations = listOf(
-            LatLng(6.9271, 79.8612) to "Colombo City Centre ChargeNet",
-            LatLng(6.8404, 79.8712) to "Mount Lavinia Hotel Station",
-            LatLng(6.7106, 79.9074) to "Panadura Public Charger", // This is our target
-            LatLng(6.9030, 79.8530) to "One Galle Face Mall",
-            LatLng(6.7969, 79.8885) to "Moratuwa University Point"
-        )
+        // 1. Load Stations
+        val stations = StationRepository.stations
 
         var recommendedMarker: Marker? = null
 
-        // 2. Loop through and Add Markers with Logic
-        for ((location, title) in stations) {
-
-            // Check if this is the "Best" station (Panadura)
-            val isMostConvenient = (title == "Panadura Public Charger")
+        for (station in stations) {
+            // Get the REAL status (Busy, Medium, or Free)
+            val currentStatus = StationRepository.getStationStatus(this, station.id)
+            val isPanadura = (station.title == "Panadura Public Charger")
 
             val markerOptions = MarkerOptions()
-                .position(location)
-                .title(title)
+                .position(station.location)
+                .title(station.title)
+                .snippet("Status: $currentStatus")
 
-            if (isMostConvenient) {
-                // HIGHLIGHT LOGIC: Make it GREEN and add a Star
+            // --- FIXED COLOR LOGIC ---
+            if (currentStatus == "Busy") {
+                // High Traffic -> RED
+                markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
+
+            } else if (currentStatus == "Medium") {
+                // Medium Traffic -> ORANGE (New!)
+                markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE))
+
+            } else if (isPanadura && userMode == "DRIVER") {
+                // Panadura + Free + Driver Mode -> GREEN (Best Choice)
                 markerOptions
                     .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN))
-                    .snippet("★ Best Choice (In Range)")
-                    .zIndex(1.0f) // Put this marker on top of others
+                    .snippet("★ Recommended (Free & In Range)")
+                    .zIndex(1.0f)
             } else {
-                // NORMAL LOGIC: Make others RED
-                markerOptions
-                    .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
-                    .snippet("Status: Unknown")
+                // Others + Free -> AZURE (Blue)
+                markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
             }
 
             val marker = mMap.addMarker(markerOptions)
+            marker?.tag = station.id
 
-            if (isMostConvenient) {
+            // Save reference if it's the recommended one
+            if (isPanadura && currentStatus == "Free" && userMode == "DRIVER") {
                 recommendedMarker = marker
             }
         }
 
-        // 3. Zoom specifically to the Green Marker
-        val targetLocation = LatLng(6.7106, 79.9074)
-        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(targetLocation, 13f))
+        // Auto-Zoom
+        val panaduraLoc = LatLng(6.7106, 79.9074)
+        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(panaduraLoc, 12f))
 
-        // 4. Auto-open the Green Marker's popup
-        recommendedMarker?.showInfoWindow()
+        // Show Recommendation
+        if (recommendedMarker != null) {
+            recommendedMarker.showInfoWindow()
+            Toast.makeText(this, "Best station found based on traffic & range!", Toast.LENGTH_LONG).show()
+        }
 
         mMap.setOnMarkerClickListener { marker ->
             showStationDetails(marker)
             true
-        }
-    }
-
-    private fun enableMyLocation() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-            == PackageManager.PERMISSION_GRANTED
-        ) {
-            mMap.isMyLocationEnabled = true
-        } else {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
-                LOCATION_PERMISSION_REQUEST_CODE
-            )
-        }
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                enableMyLocation()
-            }
         }
     }
 
@@ -131,34 +116,65 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
         val btnSubmit = dialog.findViewById<Button>(R.id.btnSubmitRating)
         val rgBusyness = dialog.findViewById<RadioGroup>(R.id.rgBusyness)
 
+        val stationId = marker.tag as? String ?: return
+
         tvStationName.text = marker.title
         tvStatus.text = marker.snippet
 
         btnNavigate.setOnClickListener {
-            val intentUri = Uri.parse("google.navigation:q=${marker.position.latitude},${marker.position.longitude}")
-            val mapIntent = Intent(Intent.ACTION_VIEW, intentUri)
-            mapIntent.setPackage("com.google.android.apps.maps")
-            try {
-                startActivity(mapIntent)
-            } catch (e: Exception) {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("http://maps.google.com/maps?daddr=${marker.position.latitude},${marker.position.longitude}")))
-            }
+            val uri = Uri.parse("google.navigation:q=${marker.position.latitude},${marker.position.longitude}")
+            val intent = Intent(Intent.ACTION_VIEW, uri)
+            intent.setPackage("com.google.android.apps.maps")
+            try { startActivity(intent) } catch (e: Exception) { }
             dialog.dismiss()
         }
 
+        // --- FIXED SAVING LOGIC ---
         btnSubmit.setOnClickListener {
             val selectedId = rgBusyness.checkedRadioButtonId
             if (selectedId != -1) {
                 val selectedRb = dialog.findViewById<RadioButton>(selectedId)
-                val status = selectedRb.text.toString()
-                marker.snippet = "Status: $status"
-                tvStatus.text = "Status: $status"
+                val statusText = selectedRb.text.toString()
+
+                // 1. Determine Exact Status
+                val exactStatus = when {
+                    statusText.contains("High") -> "Busy"
+                    statusText.contains("Medium") -> "Medium" // Now we capture Medium!
+                    else -> "Free"
+                }
+
+                // 2. Save to Phone
+                StationRepository.saveStationStatus(this, stationId, exactStatus)
+
+                // 3. Update UI (Visuals) immediately
+                marker.snippet = "Status: $exactStatus"
+
+                when (exactStatus) {
+                    "Busy" -> marker.setIcon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
+                    "Medium" -> marker.setIcon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE))
+                    "Free" -> marker.setIcon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
+                }
+
                 marker.showInfoWindow()
-                Toast.makeText(this, "Crowd report submitted!", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this, "Please select a level", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Status saved: $exactStatus", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
             }
         }
         dialog.show()
+    }
+
+    private fun enableMyLocation() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            mMap.isMyLocationEnabled = true
+        } else {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), LOCATION_PERMISSION_REQUEST_CODE)
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            enableMyLocation()
+        }
     }
 }

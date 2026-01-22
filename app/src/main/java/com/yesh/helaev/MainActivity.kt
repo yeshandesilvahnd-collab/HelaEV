@@ -18,6 +18,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvRangeResult: TextView
     private lateinit var btnDirectMe: Button
 
+    // 1. Declare the new button
+    private lateinit var btnReporterMode: Button
+
     private var selectedVehicle: Vehicle? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -31,22 +34,35 @@ class MainActivity : AppCompatActivity() {
         tvRangeResult = findViewById(R.id.tvRangeResult)
         btnDirectMe = findViewById(R.id.btnDirectMe)
 
+        // 2. Connect the new button ID
+        btnReporterMode = findViewById(R.id.btnReporterMode)
+
         setupVehicleSelector()
         setupSeekBar()
 
+        // --- OPTION A: DRIVER MODE ---
         btnDirectMe.setOnClickListener {
             val rangeText = tvRangeResult.text.toString().filter { it.isDigit() }
 
             if (rangeText.isNotEmpty() && rangeText.toInt() > 0) {
                 val rangeValue = rangeText.toInt()
-                Toast.makeText(this, "Calculating route for $rangeValue km...", Toast.LENGTH_SHORT).show()
 
+                // Go to Loading Screen first
                 val intent = Intent(this, LoadingActivity::class.java)
                 intent.putExtra("RANGE_RESULT", rangeValue)
+                intent.putExtra("USER_MODE", "DRIVER") // Tell Map we are driving
                 startActivity(intent)
             } else {
                 Toast.makeText(this, "Please select a vehicle first!", Toast.LENGTH_SHORT).show()
             }
+        }
+
+        // --- OPTION B: REPORTER MODE ---
+        btnReporterMode.setOnClickListener {
+            // Go Straight to Map (No Loading screen needed)
+            val intent = Intent(this, MapsActivity::class.java)
+            intent.putExtra("USER_MODE", "REPORTER") // Tell Map we are reporting
+            startActivity(intent)
         }
     }
 

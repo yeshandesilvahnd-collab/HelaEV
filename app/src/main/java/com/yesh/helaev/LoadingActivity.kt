@@ -11,15 +11,16 @@ class LoadingActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_loading)
 
-        // Get the range calculated from the previous screen
         val range = intent.getIntExtra("RANGE_RESULT", 0)
+        // Get the mode passed from MainActivity
+        val userMode = intent.getStringExtra("USER_MODE")
 
-        // Wait for 3 seconds (3000ms), then go to Maps
         Handler(Looper.getMainLooper()).postDelayed({
             val mapIntent = Intent(this, MapsActivity::class.java)
-            mapIntent.putExtra("RANGE_RESULT", range) // Pass the data forward
+            mapIntent.putExtra("RANGE_RESULT", range)
+            mapIntent.putExtra("USER_MODE", userMode) // Pass it forward!
             startActivity(mapIntent)
-            finish() // Close this loading screen so user can't go back to it
+            finish()
         }, 3000)
     }
 }
