@@ -55,4 +55,41 @@ object StationRepository {
         val prefs = context.getSharedPreferences("HelaEV_Data", Context.MODE_PRIVATE)
         return prefs.getString(stationId + "_REPORTERS", "None") ?: "None"
     }
+
+    // --- NEW: VERIFY A USER ---
+    fun verifyUserReport(context: Context, stationId: String, userToVerify: String) {
+        val prefs = context.getSharedPreferences("HelaEV_Data", Context.MODE_PRIVATE)
+
+        // 1. Get the current list (e.g. "Yeshan, Kamal")
+        var currentListString = prefs.getString(stationId + "_REPORTERS", "") ?: ""
+
+        // 2. Find "Yeshan" and replace with "Yeshan_VERIFIED"
+        // (We use a special tag "_VERIFIED" to track it invisibly)
+        if (currentListString.contains(userToVerify) && !currentListString.contains(userToVerify + "_VERIFIED")) {
+            currentListString = currentListString.replace(userToVerify, userToVerify + "_VERIFIED")
+
+            // 3. Save it back
+            prefs.edit().putString(stationId + "_REPORTERS", currentListString).apply()
+        }
+    }
+
+    // 1. INCREMENT SCORE (Run this when someone clicks "Verify")
+    fun incrementUserScore(context: Context, username: String) {
+        val prefs = context.getSharedPreferences("HelaEV_Scores", Context.MODE_PRIVATE)
+        val currentScore = prefs.getInt(username, 0)
+        prefs.edit().putInt(username, currentScore + 1).apply()
+    }
+
+    // 2. GET BADGE (Run this when showing the list)
+    fun getUserBadge(context: Context, username: String): String {
+        val prefs = context.getSharedPreferences("HelaEV_Scores", Context.MODE_PRIVATE)
+        val score = prefs.getInt(username, 0) // Default is 0
+
+        return when {
+            score >= 100 -> "👑 Tesla Master"
+            score >= 50 -> "⚡ Amp Expert"
+            score >= 1 -> "🔋 Volt Scout"
+            else -> "" // No badge yet
+        }
+    }
 }

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="300dp"
+    android:layout_width="320dp"
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:padding="24dp"
@@ -13,23 +13,34 @@
         android:textSize="20sp"
         android:textStyle="bold"
         android:textColor="#009688"
-        android:layout_marginBottom="16dp"/>
+        android:layout_marginBottom="4dp"/>
 
     <TextView
-        android:id="@+id/tvReportersList"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Loading..."
-        android:textSize="16sp"
-        android:lineSpacingExtra="8dp"
-        android:textColor="#333333"/>
+        android:text="Verify reports to help others."
+        android:textSize="12sp"
+        android:textColor="#888888"
+        android:layout_marginBottom="16dp"/>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="200dp"
+        android:layout_marginBottom="16dp">
+
+        <LinearLayout
+            android:id="@+id/llReportersContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+        </LinearLayout>
+    </ScrollView>
 
     <Button
         android:id="@+id/btnCloseList"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Close"
-        android:layout_marginTop="24dp"
         android:backgroundTint="#CCCCCC"
         android:textColor="#333333"/>
 

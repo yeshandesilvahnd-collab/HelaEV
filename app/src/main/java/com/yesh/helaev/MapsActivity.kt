@@ -6,9 +6,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.location.Location // Imported for distance math
 import android.net.Uri
 import android.os.Bundle
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.TextView
@@ -41,7 +46,6 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
         calculatedRange = intent.getIntExtra("RANGE_RESULT", 0)
         userMode = intent.getStringExtra("USER_MODE") ?: "DRIVER"
 
-        // GET LOGGED IN USER NAME
         val prefs = getSharedPreferences("HelaEV_User", Context.MODE_PRIVATE)
         currentUserName = prefs.getString("CURRENT_USER", "Guest") ?: "Guest"
 
@@ -58,44 +62,78 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
         enableMyLocation()
 
         val stations = StationRepository.stations
-        var recommendedMarker: Marker? = null
-        val homeLocation = LatLng(6.7106, 79.9074)
+        val homeLocation = LatLng(6.7106, 79.9074) // Our "Simulation" Location (Panadura)
+
+        // --- 1. SMART ALGORITHM: FIND THE BEST STATION ---
+        var bestStationId: String? = null
+
+        if (userMode == "DRIVER") {
+            // Step A: Filter stations within Range
+            val reachableStations = stations.filter { station ->
+                val distKm = calculateDistanceKm(homeLocation, station.location)
+                distKm <= calculatedRange
+            }
+
+            // Step B: Sort by Busyness (Free > Medium > Busy)
+            // We give "Score": Free=1, Medium=2, Busy=3. Lowest score wins.
+            val bestStation = reachableStations.minByOrNull { station ->
+                val status = StationRepository.getStatus(this, station.id)
+                when (status) {
+                    "Free" -> 1
+                    "Medium" -> 2
+                    else -> 3
+                }
+            }
+
+            bestStationId = bestStation?.id
+        }
+        // ------------------------------------------------
 
         for (station in stations) {
             val currentStatus = StationRepository.getStatus(this, station.id)
-
-            // FIXED 1: Use the new "getReporterNames" (List version)
             val reporterList = StationRepository.getReporterNames(this, station.id)
 
-            val isPanadura = (station.title == "Panadura Public Charger")
+            // Standard snippet
+            var snippetText = "Status: $currentStatus (Reports: $reporterList)"
+            var markerTitle = station.title
+            var markerColor = BitmapDescriptorFactory.HUE_AZURE // Default Blue
 
-            // FIXED 2: Updated text format to show the List
-            val snippetText = "Status: $currentStatus (Reports: $reporterList)"
+            // --- 2. COLOR LOGIC ---
+            if (station.id == bestStationId) {
+                // WINNER! This is the smart recommendation
+                markerColor = BitmapDescriptorFactory.HUE_VIOLET // Purple stands out!
+                markerTitle = "★ BEST OPTION: ${station.title}"
+                snippetText = "Recommended: $currentStatus & In Range"
+            }
+            else {
+                // Standard Traffic Coloring
+                if (currentStatus == "Busy") {
+                    markerColor = BitmapDescriptorFactory.HUE_RED
+                } else if (currentStatus == "Medium") {
+                    markerColor = BitmapDescriptorFactory.HUE_ORANGE
+                } else {
+                    markerColor = BitmapDescriptorFactory.HUE_AZURE // Free
+                }
+            }
 
             val markerOptions = MarkerOptions()
                 .position(station.location)
-                .title(station.title)
+                .title(markerTitle)
                 .snippet(snippetText)
+                .icon(BitmapDescriptorFactory.defaultMarker(markerColor))
 
-            // Color Logic
-            if (currentStatus == "Busy") {
-                markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
-            } else if (currentStatus == "Medium") {
-                markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE))
-            } else if (isPanadura && userMode == "DRIVER") {
-                markerOptions
-                    .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN))
-                    .snippet("★ Recommended ($currentStatus)")
-                    .zIndex(1.0f)
-            } else {
-                markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
+            // Ensure the "Best" marker sits on top of others
+            if (station.id == bestStationId) {
+                markerOptions.zIndex(1.0f)
             }
 
             val marker = mMap.addMarker(markerOptions)
             marker?.tag = station.id
 
-            if (isPanadura && currentStatus == "Free" && userMode == "DRIVER") {
-                recommendedMarker = marker
+            // Auto-open the winner so the user sees it immediately
+            if (station.id == bestStationId) {
+                marker?.showInfoWindow()
+                Toast.makeText(this, "We found the best station for you: ${station.title}", Toast.LENGTH_LONG).show()
             }
         }
 
@@ -111,11 +149,6 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
                     .strokeColor(Color.BLUE)
                     .fillColor(0x220000FF)
             )
-            Toast.makeText(this, "Logged in as: $currentUserName", Toast.LENGTH_SHORT).show()
-        }
-
-        if (recommendedMarker != null) {
-            recommendedMarker.showInfoWindow()
         }
 
         mMap.setOnMarkerClickListener { marker ->
@@ -123,6 +156,14 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
             true
         }
     }
+
+    // --- HELPER: MATH TO CALCULATE DISTANCE ---
+    private fun calculateDistanceKm(start: LatLng, end: LatLng): Float {
+        val results = FloatArray(1)
+        Location.distanceBetween(start.latitude, start.longitude, end.latitude, end.longitude, results)
+        return results[0] / 1000 // Convert meters to KM
+    }
+    // ------------------------------------------
 
     private fun showStationDetails(marker: Marker) {
         val dialog = Dialog(this)
@@ -132,18 +173,15 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
         val tvStatus = dialog.findViewById<TextView>(R.id.tvStationStatus)
         val btnNavigate = dialog.findViewById<Button>(R.id.btnNavigate)
         val btnSubmit = dialog.findViewById<Button>(R.id.btnSubmitRating)
-        val btnViewReporters = dialog.findViewById<Button>(R.id.btnViewReporters) // NEW BUTTON
+        val btnViewReporters = dialog.findViewById<Button>(R.id.btnViewReporters)
         val rgBusyness = dialog.findViewById<RadioGroup>(R.id.rgBusyness)
 
         val stationId = marker.tag as? String ?: return
 
         tvStationName.text = marker.title
-
-        // Show simplified status on the main dialog
         val count = StationRepository.getReporterNames(this, stationId).split(",").filter { it.isNotBlank() }.size
         tvStatus.text = "${marker.snippet} \n($count total reports)"
 
-        // --- NEW: OPEN LEADERBOARD ---
         btnViewReporters.setOnClickListener {
             showLeaderboardDialog(stationId)
         }
@@ -170,9 +208,11 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
 
                 StationRepository.saveStationUpdate(this, stationId, exactStatus, currentUserName)
 
-                val updatedList = StationRepository.getReporterNames(this, stationId)
-                marker.snippet = "Status: $exactStatus" // Keep map pin clean
+                // Update marker snippet logic so it doesn't lose the "Best" title if it was best
+                // (For simplicity, we just update status here)
+                marker.snippet = "Status: $exactStatus"
 
+                // Update Icon Color based on new status
                 when (exactStatus) {
                     "Busy" -> marker.setIcon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
                     "Medium" -> marker.setIcon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE))
@@ -186,29 +226,85 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
         dialog.show()
     }
 
-    // --- NEW FUNCTION: Show the Vertical List ---
     private fun showLeaderboardDialog(stationId: String) {
         val listDialog = Dialog(this)
         listDialog.setContentView(R.layout.dialog_reporters_list)
 
-        val tvList = listDialog.findViewById<TextView>(R.id.tvReportersList)
+        val container = listDialog.findViewById<LinearLayout>(R.id.llReportersContainer)
         val btnClose = listDialog.findViewById<Button>(R.id.btnCloseList)
 
-        // 1. Get raw string "Nimal, Kamal"
         val rawNames = StationRepository.getReporterNames(this, stationId)
 
-        // 2. Format it nicely
         if (rawNames == "None" || rawNames.isEmpty()) {
-            tvList.text = "No reports yet."
+            val tvEmpty = TextView(this)
+            tvEmpty.text = "No reports yet."
+            container.addView(tvEmpty)
         } else {
-            // Split by comma and make a vertical list
             val namesArray = rawNames.split(", ")
-            val formattedString = StringBuilder()
 
-            for ((index, name) in namesArray.withIndex()) {
-                formattedString.append("${index + 1}. $name\n") // "1. Nimal"
+            for (rawName in namesArray) {
+                if (rawName.isBlank()) continue
+
+                val isVerified = rawName.contains("_VERIFIED")
+                val cleanName = rawName.replace("_VERIFIED", "")
+
+                // --- CREATE ROW ---
+                val row = LinearLayout(this)
+                row.orientation = LinearLayout.HORIZONTAL
+                row.setPadding(0, 16, 0, 16)
+                row.gravity = Gravity.CENTER_VERTICAL
+
+                // 1. NAME + BADGE
+                val tvName = TextView(this)
+                val badge = StationRepository.getUserBadge(this, cleanName)
+                if (badge.isNotEmpty()) {
+                    tvName.text = "$cleanName  ($badge)"
+                } else {
+                    tvName.text = cleanName
+                }
+
+                tvName.textSize = 16f
+                tvName.setTextColor(Color.BLACK)
+                tvName.layoutParams = LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+                )
+
+                row.addView(tvName)
+
+                // 2. BADGE or BUTTON
+                if (isVerified) {
+                    val tvBadge = TextView(this)
+                    tvBadge.text = "✅ Approved"
+                    tvBadge.setTextColor(Color.parseColor("#4CAF50"))
+                    tvBadge.textSize = 12f
+                    tvBadge.typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    row.addView(tvBadge)
+                } else {
+                    val btnVerify = Button(this)
+                    btnVerify.text = "Verify"
+                    btnVerify.textSize = 10f
+                    val params = LinearLayout.LayoutParams(180, 100)
+                    btnVerify.layoutParams = params
+
+                    btnVerify.setOnClickListener {
+                        StationRepository.verifyUserReport(this, stationId, cleanName)
+                        StationRepository.incrementUserScore(this, cleanName) // Score +1
+                        Toast.makeText(this, "Verified! $cleanName gained +1 Reputation", Toast.LENGTH_SHORT).show()
+                        listDialog.dismiss()
+                        showLeaderboardDialog(stationId)
+                    }
+                    row.addView(btnVerify)
+                }
+
+                container.addView(row)
+
+                val divider = View(this)
+                divider.layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 2
+                )
+                divider.setBackgroundColor(Color.LTGRAY)
+                container.addView(divider)
             }
-            tvList.text = formattedString.toString()
         }
 
         btnClose.setOnClickListener {
