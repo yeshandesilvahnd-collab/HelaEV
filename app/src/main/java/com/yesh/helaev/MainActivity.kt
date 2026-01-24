@@ -64,6 +64,25 @@ class MainActivity : AppCompatActivity() {
             intent.putExtra("USER_MODE", "REPORTER")
             startActivity(intent)
         }
+
+        val btnLogout = findViewById<Button>(R.id.btnLogout)
+
+        btnLogout.setOnClickListener {
+            // 1. CLEAR DATA (The important part!)
+            val prefs = getSharedPreferences("HelaEV_User", Context.MODE_PRIVATE)
+            val editor = prefs.edit()
+            editor.clear() // Deletes the saved name & mobile
+            editor.apply()
+
+            // 2. GO BACK TO LOGIN
+            val intent = Intent(this, LoginActivity::class.java)
+            startActivity(intent)
+
+            // 3. CLOSE THIS SCREEN (So 'Back' button doesn't return here)
+            finish()
+
+            Toast.makeText(this, "Logged out successfully", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun setupVehicleSelector() {
