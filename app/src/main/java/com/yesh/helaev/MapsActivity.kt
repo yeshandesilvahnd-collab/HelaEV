@@ -2,6 +2,7 @@ package com.yesh.helaev
 
 import android.Manifest
 import android.app.Dialog
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -30,6 +31,7 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var mMap: GoogleMap
     private var calculatedRange: Int = 0
     private var userMode: String = "DRIVER"
+    private var currentUserName: String = "Guest"
     private val LOCATION_PERMISSION_REQUEST_CODE = 1
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,46 +41,43 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
         calculatedRange = intent.getIntExtra("RANGE_RESULT", 0)
         userMode = intent.getStringExtra("USER_MODE") ?: "DRIVER"
 
+        // GET LOGGED IN USER NAME
+        val prefs = getSharedPreferences("HelaEV_User", Context.MODE_PRIVATE)
+        currentUserName = prefs.getString("CURRENT_USER", "Guest") ?: "Guest"
+
+        val btnBack = findViewById<Button>(R.id.btnBackHome)
+        btnBack.setOnClickListener { finish() }
+
         val mapFragment = supportFragmentManager
             .findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
-
-        // Find the button
-        val btnBack = findViewById<Button>(R.id.btnBackHome)
-
-// Handle Click
-        btnBack.setOnClickListener {
-            // Option A: Just close this screen (Goes back to previous)
-            finish()
-
-            // Option B (Safer): Force restart Main Activity
-            // val intent = Intent(this, MainActivity::class.java)
-            // intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
-            // startActivity(intent)
-        }
     }
 
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
         enableMyLocation()
 
-        // 1. Load Stations
         val stations = StationRepository.stations
         var recommendedMarker: Marker? = null
-
-        // Define our "Home Base" for the demo (Panadura)
         val homeLocation = LatLng(6.7106, 79.9074)
 
         for (station in stations) {
-            val currentStatus = StationRepository.getStationStatus(this, station.id)
+            val currentStatus = StationRepository.getStatus(this, station.id)
+
+            // FIXED 1: Use the new "getReporterNames" (List version)
+            val reporterList = StationRepository.getReporterNames(this, station.id)
+
             val isPanadura = (station.title == "Panadura Public Charger")
+
+            // FIXED 2: Updated text format to show the List
+            val snippetText = "Status: $currentStatus (Reports: $reporterList)"
 
             val markerOptions = MarkerOptions()
                 .position(station.location)
                 .title(station.title)
-                .snippet("Status: $currentStatus")
+                .snippet(snippetText)
 
-            // LOGIC: Set Pin Colors
+            // Color Logic
             if (currentStatus == "Busy") {
                 markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
             } else if (currentStatus == "Medium") {
@@ -86,7 +85,7 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
             } else if (isPanadura && userMode == "DRIVER") {
                 markerOptions
                     .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN))
-                    .snippet("★ Recommended (Free & In Range)")
+                    .snippet("★ Recommended ($currentStatus)")
                     .zIndex(1.0f)
             } else {
                 markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
@@ -100,27 +99,21 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
             }
         }
 
-        // 2. Auto-Zoom to Home
-        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(homeLocation, 10f)) // Zoomed out a bit to see the circle
+        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(homeLocation, 10f))
 
-        // 3. DRAW RANGE CIRCLE (Visual Geofencing)
         if (userMode == "DRIVER" && calculatedRange > 0) {
-            // Convert km to meters
             val radiusInMeters = calculatedRange * 1000.0
-
             mMap.addCircle(
                 CircleOptions()
-                    .center(homeLocation) // Center on Panadura (Our Simulation Start)
-                    .radius(radiusInMeters) // The Range from Screen 1
+                    .center(homeLocation)
+                    .radius(radiusInMeters)
                     .strokeWidth(3f)
-                    .strokeColor(Color.BLUE) // The outline color
-                    .fillColor(0x220000FF) // Semi-transparent Blue (The "0x22" makes it see-through)
+                    .strokeColor(Color.BLUE)
+                    .fillColor(0x220000FF)
             )
-
-            Toast.makeText(this, "Blue Circle shows your $calculatedRange km range", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Logged in as: $currentUserName", Toast.LENGTH_SHORT).show()
         }
 
-        // Show Recommendation
         if (recommendedMarker != null) {
             recommendedMarker.showInfoWindow()
         }
@@ -139,12 +132,21 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
         val tvStatus = dialog.findViewById<TextView>(R.id.tvStationStatus)
         val btnNavigate = dialog.findViewById<Button>(R.id.btnNavigate)
         val btnSubmit = dialog.findViewById<Button>(R.id.btnSubmitRating)
+        val btnViewReporters = dialog.findViewById<Button>(R.id.btnViewReporters) // NEW BUTTON
         val rgBusyness = dialog.findViewById<RadioGroup>(R.id.rgBusyness)
 
         val stationId = marker.tag as? String ?: return
 
         tvStationName.text = marker.title
-        tvStatus.text = marker.snippet
+
+        // Show simplified status on the main dialog
+        val count = StationRepository.getReporterNames(this, stationId).split(",").filter { it.isNotBlank() }.size
+        tvStatus.text = "${marker.snippet} \n($count total reports)"
+
+        // --- NEW: OPEN LEADERBOARD ---
+        btnViewReporters.setOnClickListener {
+            showLeaderboardDialog(stationId)
+        }
 
         btnNavigate.setOnClickListener {
             val uri = Uri.parse("google.navigation:q=${marker.position.latitude},${marker.position.longitude}")
@@ -166,22 +168,54 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
                     else -> "Free"
                 }
 
-                StationRepository.saveStationStatus(this, stationId, exactStatus)
+                StationRepository.saveStationUpdate(this, stationId, exactStatus, currentUserName)
 
-                marker.snippet = "Status: $exactStatus"
+                val updatedList = StationRepository.getReporterNames(this, stationId)
+                marker.snippet = "Status: $exactStatus" // Keep map pin clean
 
                 when (exactStatus) {
                     "Busy" -> marker.setIcon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
                     "Medium" -> marker.setIcon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE))
                     "Free" -> marker.setIcon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
                 }
-
                 marker.showInfoWindow()
-                Toast.makeText(this, "Status saved: $exactStatus", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Report added!", Toast.LENGTH_SHORT).show()
                 dialog.dismiss()
             }
         }
         dialog.show()
+    }
+
+    // --- NEW FUNCTION: Show the Vertical List ---
+    private fun showLeaderboardDialog(stationId: String) {
+        val listDialog = Dialog(this)
+        listDialog.setContentView(R.layout.dialog_reporters_list)
+
+        val tvList = listDialog.findViewById<TextView>(R.id.tvReportersList)
+        val btnClose = listDialog.findViewById<Button>(R.id.btnCloseList)
+
+        // 1. Get raw string "Nimal, Kamal"
+        val rawNames = StationRepository.getReporterNames(this, stationId)
+
+        // 2. Format it nicely
+        if (rawNames == "None" || rawNames.isEmpty()) {
+            tvList.text = "No reports yet."
+        } else {
+            // Split by comma and make a vertical list
+            val namesArray = rawNames.split(", ")
+            val formattedString = StringBuilder()
+
+            for ((index, name) in namesArray.withIndex()) {
+                formattedString.append("${index + 1}. $name\n") // "1. Nimal"
+            }
+            tvList.text = formattedString.toString()
+        }
+
+        btnClose.setOnClickListener {
+            listDialog.dismiss()
+        }
+
+        listDialog.show()
     }
 
     private fun enableMyLocation() {

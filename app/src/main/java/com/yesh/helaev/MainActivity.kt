@@ -1,5 +1,6 @@
 package com.yesh.helaev
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.widget.ArrayAdapter
@@ -17,9 +18,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var seekBarBattery: SeekBar
     private lateinit var tvRangeResult: TextView
     private lateinit var btnDirectMe: Button
-
-    // 1. Declare the new button
     private lateinit var btnReporterMode: Button
+    private lateinit var tvWelcomeUser: TextView // NEW
 
     private var selectedVehicle: Vehicle? = null
 
@@ -33,35 +33,35 @@ class MainActivity : AppCompatActivity() {
         seekBarBattery = findViewById(R.id.seekBarBattery)
         tvRangeResult = findViewById(R.id.tvRangeResult)
         btnDirectMe = findViewById(R.id.btnDirectMe)
-
-        // 2. Connect the new button ID
         btnReporterMode = findViewById(R.id.btnReporterMode)
+        tvWelcomeUser = findViewById(R.id.tvWelcomeUser) // NEW
+
+        // --- NEW: SET WELCOME MESSAGE ---
+        val prefs = getSharedPreferences("HelaEV_User", Context.MODE_PRIVATE)
+        val username = prefs.getString("CURRENT_USER", "Driver")
+        tvWelcomeUser.text = "Welcome, $username!"
 
         setupVehicleSelector()
         setupSeekBar()
 
-        // --- OPTION A: DRIVER MODE ---
         btnDirectMe.setOnClickListener {
             val rangeText = tvRangeResult.text.toString().filter { it.isDigit() }
 
             if (rangeText.isNotEmpty() && rangeText.toInt() > 0) {
                 val rangeValue = rangeText.toInt()
 
-                // Go to Loading Screen first
                 val intent = Intent(this, LoadingActivity::class.java)
                 intent.putExtra("RANGE_RESULT", rangeValue)
-                intent.putExtra("USER_MODE", "DRIVER") // Tell Map we are driving
+                intent.putExtra("USER_MODE", "DRIVER")
                 startActivity(intent)
             } else {
                 Toast.makeText(this, "Please select a vehicle first!", Toast.LENGTH_SHORT).show()
             }
         }
 
-        // --- OPTION B: REPORTER MODE ---
         btnReporterMode.setOnClickListener {
-            // Go Straight to Map (No Loading screen needed)
             val intent = Intent(this, MapsActivity::class.java)
-            intent.putExtra("USER_MODE", "REPORTER") // Tell Map we are reporting
+            intent.putExtra("USER_MODE", "REPORTER")
             startActivity(intent)
         }
     }
